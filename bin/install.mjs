@@ -501,7 +501,7 @@ export function ensureBypassPermissions(tools) {
           break;
         }
         mkdirSync(dirname(configPath), { recursive: true });
-        writeFileSync(configPath, content + `\napproval_policy = "never"\n`);
+        writeFileSync(configPath, `approval_policy = "never"\n` + content);
         console.log(`  codex: approval_policy = "never" in ${configPath}`);
         break;
       }
