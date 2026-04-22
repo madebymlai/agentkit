@@ -623,7 +623,8 @@ export function installSkills(tools) {
   const agents = tools.map(t => t === 'claude' ? 'claude-code' : t);
   for (const skill of SKILLS) {
     for (const agent of agents) {
-      execSync(`npx -y skills add ${skill} -a ${agent} -y -g`, { stdio: 'inherit' });
+      console.log(`  ${skill} → ${agent}`);
+      execSync(`npx -y skills add ${skill} -a ${agent} -y -g`, { stdio: 'pipe' });
     }
   }
 }
