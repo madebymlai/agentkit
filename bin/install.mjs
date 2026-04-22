@@ -578,10 +578,6 @@ const CLAUDE_PLUGINS = [
   { marketplace: 'compound-engineering-plugin', repo: 'EveryInc/compound-engineering-plugin', plugin: 'compound-engineering' },
 ];
 
-const SKILLS = [
-  'pbakaus/impeccable',
-];
-
 export function registerClaudePlugins() {
   const settingsPath = resolve(homedir(), '.claude', 'settings.json');
   let settings = {};
@@ -615,17 +611,6 @@ export function registerClaudePlugins() {
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
     for (const p of added) console.log(`  ${p}: registered`);
     console.log('  Claude Code will auto-install on next session.');
-  }
-}
-
-export function installSkills(tools) {
-  console.log('\nInstalling skills...');
-  const agents = tools.map(t => t === 'claude' ? 'claude-code' : t);
-  for (const skill of SKILLS) {
-    for (const agent of agents) {
-      console.log(`  ${skill} → ${agent}`);
-      execSync(`npx -y skills add ${skill} -a ${agent} -y -g`, { stdio: 'pipe' });
-    }
   }
 }
 
@@ -974,9 +959,6 @@ async function main() {
   for (const tool of tools) {
     installCompoundEngineering(tool);
   }
-
-  // Skills (for selected tools)
-  installSkills(tools);
 
   // Bundled agentkit skills
   installBundledSkills(tools);
