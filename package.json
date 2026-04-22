@@ -4,10 +4,11 @@
   "description": "npx installer for dev tools",
   "type": "module",
   "bin": {
-    "installer": "./bin/install.mjs"
+    "agentkit": "./bin/install.mjs"
   },
   "files": [
-    "bin/"
+    "bin/",
+    "skills/"
   ],
   "repository": {
     "type": "git",

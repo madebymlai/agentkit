@@ -600,8 +600,84 @@ export function ensureGitignore(entries) {
   console.log(`  Added ${missing.join(', ')} to .gitignore`);
 }
 
+export function installBundledSkills(tools) {
+  console.log('\nInstalling agentkit skills...');
+  const srcDir = resolve(__dir, '..', 'skills');
+  if (!existsSync(srcDir)) return;
+
+  for (const tool of tools) {
+    let destDir;
+    switch (tool) {
+      case 'claude':
+        destDir = resolve(homedir(), '.claude', 'skills');
+        break;
+      case 'codex':
+        destDir = resolve(homedir(), '.codex', 'skills');
+        break;
+      case 'opencode': {
+        const isWin = process.platform === 'win32';
+        destDir = isWin
+          ? win32.join(process.env.APPDATA, 'opencode', 'skills')
+          : resolve(homedir(), '.config', 'opencode', 'skills');
+        break;
+      }
+    }
+    copyDirMerge(srcDir, destDir, { overwrite: true });
+    console.log(`  ${tool}: ${destDir}`);
+  }
+}
+
+export function setupProject(tools) {
+  if (!existsSync('.git')) {
+    console.log('Not a git repository, skipping project setup.');
+    return;
+  }
+
+  ensureGitignore(['.claude/', '.codex/', '.opencode/', 'CLAUDE.md', 'AGENTS.md', '.mcp.json']);
+
+  if (!existsSync('AGENTS.md')) {
+    let template = '';
+    if (getInstalledVersion('tokf')) {
+      template += `# tokf\n\n🗜️ means this output was compressed by tokf.\nRun \`tokf raw last\` to see the full uncompressed output of the last command.\n\n`;
+    }
+    template += `# Principles\n\n`
+      + `- **SRP** — A module should have one, and only one, reason to change: responsible to one actor.\n`
+      + `- **OCP** — Software entities should be open for extension but closed for modification.\n`
+      + `- **LSP** — Objects of a supertype shall be replaceable with objects of a subtype without altering program correctness.\n`
+      + `- **ISP** — No client should be forced to depend on methods it does not use; prefer many client-specific interfaces over one general-purpose interface.\n`
+      + `- **DIP** — High-level modules should not depend on low-level modules — both should depend on abstractions; abstractions should not depend on details.\n`
+      + `- **KISS** — Every system works best when simplicity is a key goal and unnecessary complexity is avoided.\n`
+      + `- **DRY** — Every piece of knowledge must have a single, unambiguous, authoritative representation within a system.\n`
+      + `- **Forward-First** — Design for the current and next contract version; never introduce backward-compatibility shims or legacy code paths that increase maintenance surface.\n`
+      + `- **No Defensive Garbage** — Trust established preconditions and module contracts; let violated invariants surface as immediate failures instead of masking them with silent fallbacks.\n`
+      + `- **Tell, Don't Ask** — Rather than querying an object's state and acting on it, tell the object what to do and let it use its own state to decide how.\n`
+      + `- **Fail Fast** — Detect and report errors at the earliest possible point, at the interface where the fault originates, rather than allowing bad state to propagate.\n`
+      + `- **No Silent Error Swallowing** — Never catch an exception and discard it without logging, re-raising, or making the failure visible; every error must produce an observable signal.\n`
+      + `- **Explicit Error Types** — Represent each distinct failure mode as a named, typed value in the return signature rather than relying on generic exceptions or sentinel values.\n`
+      + `\n`;
+    template += `# Workflow\n`;
+    writeFileSync('AGENTS.md', template);
+    console.log('  Created AGENTS.md');
+  }
+
+  if (tools.includes('claude') && !existsSync('CLAUDE.md')) {
+    writeFileSync('CLAUDE.md', '@AGENTS.md\n');
+    console.log('  Created CLAUDE.md (references @AGENTS.md)');
+  }
+}
+
 async function main() {
-  console.log('installer\n');
+  const projectOnly = process.argv.includes('--project') || process.argv.includes('-p');
+
+  if (projectOnly) {
+    console.log('agentkit project setup\n');
+    const tools = ['claude', 'codex', 'opencode'];
+    setupProject(tools);
+    console.log('\nDone.');
+    return;
+  }
+
+  console.log('agentkit\n');
 
   const tools = await multiSelect([
     { label: 'Claude Code', value: 'claude' },
@@ -645,6 +721,9 @@ async function main() {
   // Skills (for selected tools)
   installSkills(tools);
 
+  // Bundled agentkit skills
+  installBundledSkills(tools);
+
   // API keys
   console.log('\nAPI Keys\n');
   const keys = [];
@@ -664,6 +743,8 @@ async function main() {
 
   const envOverrides = Object.fromEntries(keys.map(({ key, value }) => [key, value]));
   mergeMcpConfig('context7', REGISTRY['context7'], tools, envOverrides);
+
+  setupProject(tools);
 
   console.log('\nDone.');
 }
