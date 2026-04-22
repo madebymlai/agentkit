@@ -461,33 +461,73 @@ export function writeEnvVars(keys) {
   }
 }
 
-export function ensureUserSettings(patch) {
-  const settingsPath = resolve(homedir(), '.claude', 'settings.json');
-  let settings = {};
-  if (existsSync(settingsPath)) {
-    settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
-  }
-  const added = [];
-  for (const [key, value] of Object.entries(patch)) {
-    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      settings[key] ??= {};
-      for (const [k, v] of Object.entries(value)) {
-        if (settings[key][k] === undefined) {
-          settings[key][k] = v;
-          added.push(`${key}.${k}`);
+
+
+export function ensureBypassPermissions(tools) {
+  console.log('\nConfiguring permissions...');
+  for (const tool of tools) {
+    switch (tool) {
+      case 'claude': {
+        const settingsPath = resolve(homedir(), '.claude', 'settings.json');
+        let settings = {};
+        if (existsSync(settingsPath)) {
+          settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
         }
+        if (settings.permissions?.defaultMode === 'bypassPermissions') {
+          console.log(`  claude: already set`);
+          break;
+        }
+        settings.permissions ??= {};
+        settings.permissions.defaultMode = 'bypassPermissions';
+        settings.attribution ??= {};
+        settings.attribution.commit ??= '';
+        settings.attribution.pr ??= '';
+        mkdirSync(dirname(settingsPath), { recursive: true });
+        writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+        console.log(`  claude: bypassPermissions + no co-authored-by in ${settingsPath}`);
+        break;
       }
-    } else if (settings[key] === undefined) {
-      settings[key] = value;
-      added.push(key);
+      case 'codex': {
+        const isWin = process.platform === 'win32';
+        const configPath = isWin
+          ? win32.join(process.env.APPDATA, 'codex', 'config.toml')
+          : resolve(homedir(), '.codex', 'config.toml');
+        let content = '';
+        if (existsSync(configPath)) {
+          content = readFileSync(configPath, 'utf8');
+        }
+        if (content.includes('approval_policy')) {
+          console.log(`  codex: already set`);
+          break;
+        }
+        mkdirSync(dirname(configPath), { recursive: true });
+        writeFileSync(configPath, content + `\napproval_policy = "never"\n`);
+        console.log(`  codex: approval_policy = "never" in ${configPath}`);
+        break;
+      }
+      case 'opencode': {
+        const isWin = process.platform === 'win32';
+        const configDir = isWin
+          ? win32.join(process.env.APPDATA, 'opencode')
+          : resolve(homedir(), '.config', 'opencode');
+        const configPath = resolve(configDir, 'opencode.json');
+        let config = {};
+        if (existsSync(configPath)) {
+          config = JSON.parse(readFileSync(configPath, 'utf8'));
+        }
+        if (config.permission === 'allow') {
+          console.log(`  opencode: already set`);
+          break;
+        }
+        config.permission = 'allow';
+        mkdirSync(configDir, { recursive: true });
+        writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+        console.log(`  opencode: permission = "allow" in ${configPath}`);
+        break;
+      }
     }
   }
-  if (!added.length) return;
-  mkdirSync(dirname(settingsPath), { recursive: true });
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-  console.log(`  Set ${added.join(', ')} in ${settingsPath}`);
 }
-
 
 export function multiSelect(options) {
   return new Promise((done) => {
@@ -744,6 +784,7 @@ async function main() {
   const envOverrides = Object.fromEntries(keys.map(({ key, value }) => [key, value]));
   mergeMcpConfig('context7', REGISTRY['context7'], tools, envOverrides);
 
+  ensureBypassPermissions(tools);
   setupProject(tools);
 
   console.log('\nDone.');
