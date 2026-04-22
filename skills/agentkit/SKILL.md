@@ -54,7 +54,7 @@ Format: `- **Name** — Academic definition in 1-2 sentences.`
 - **Fail Fast** — Detect and report errors at the earliest possible point, at the interface where the fault originates, rather than allowing bad state to propagate.
 ```
 
-If AGENTS.md already has a Principles section, ask to merge or overwrite — don't duplicate.
+AGENTS.md already has a Principles section, append to it new accepted project-specific principles.
 </step>
 </phase>
 
