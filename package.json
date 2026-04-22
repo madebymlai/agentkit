@@ -1,0 +1,17 @@
+{
+  "name": "@madebymlai/installer",
+  "version": "0.1.0",
+  "description": "npx installer for dev tools",
+  "type": "module",
+  "bin": {
+    "installer": "./bin/install.mjs"
+  },
+  "files": [
+    "bin/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/madebymlai/installer.git"
+  },
+  "license": "MIT"
+}
