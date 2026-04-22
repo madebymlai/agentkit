@@ -620,9 +620,11 @@ export function registerClaudePlugins() {
 
 export function installSkills(tools) {
   console.log('\nInstalling skills...');
-  const agents = tools.map(t => t === 'claude' ? 'claude-code' : t).join(',');
+  const agents = tools.map(t => t === 'claude' ? 'claude-code' : t);
   for (const skill of SKILLS) {
-    execSync(`npx -y skills add ${skill} -a ${agents} -y -g`, { stdio: 'inherit' });
+    for (const agent of agents) {
+      execSync(`npx -y skills add ${skill} -a ${agent} -y -g`, { stdio: 'inherit' });
+    }
   }
 }
 
