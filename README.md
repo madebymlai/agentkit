@@ -8,7 +8,7 @@ Setup tool for AI coding agents. Installs and configures tools across Claude Cod
 npx @madebymlai/agentkit
 ```
 
-Project setup only (AGENTS.md, CLAUDE.md, .gitignore):
+Project setup only (AGENTS.md, .gitignore):
 
 ```bash
 npx @madebymlai/agentkit --project
@@ -27,7 +27,6 @@ Prompts you to select which tools you use (Claude Code, Codex, OpenCode), then:
 | **impeccable** | Frontend design | Skills installed globally for selected tools |
 | **bun** | JS runtime | Installed if missing |
 | **AGENTS.md** | Project config | Principles template + tokf section |
-| **CLAUDE.md** | Claude config | References @AGENTS.md |
 | **.gitignore** | Git config | Ignores .claude/, .codex/, .opencode/, CLAUDE.md, AGENTS.md |
 | **API keys** | Environment | CONTEXT7_API_KEY written to shell profile |
 
