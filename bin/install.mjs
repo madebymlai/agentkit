@@ -531,23 +531,44 @@ export function ensureBypassPermissions(tools) {
 
 export function multiSelect(options) {
   return new Promise((done) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    console.log('\nSelect tools (e.g. 1,2 or "all"):\n');
-    options.forEach((opt, i) => console.log(`  ${i + 1}) ${opt.label}`));
-    console.log('');
-    rl.question('> ', (answer) => {
-      rl.close();
-      const input = answer.trim().toLowerCase();
-      if (input === 'all' || input === '*') {
-        done(options.map(o => o.value));
-        return;
-      }
-      const selected = input.split(',')
-        .map(s => parseInt(s.trim(), 10) - 1)
-        .filter(i => i >= 0 && i < options.length)
-        .map(i => options[i].value);
-      done([...new Set(selected)]);
+    const selected = options.map(() => true);
+    let cursor = 0;
+
+    const render = () => {
+      process.stdout.write(`\x1b[${options.length}A`);
+      options.forEach((opt, i) => {
+        const check = selected[i] ? 'x' : ' ';
+        const arrow = i === cursor ? '>' : ' ';
+        process.stdout.write(`\x1b[2K${arrow} [${check}] ${opt.label}\n`);
+      });
+    };
+
+    console.log('\nSelect tools (arrows to move, space to toggle, enter to confirm):\n');
+    options.forEach((opt, i) => {
+      const arrow = i === cursor ? '>' : ' ';
+      console.log(`${arrow} [x] ${opt.label}`);
     });
+
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    const onKey = (key) => {
+      if (key === '\x1b[A') { cursor = (cursor - 1 + options.length) % options.length; render(); }
+      else if (key === '\x1b[B') { cursor = (cursor + 1) % options.length; render(); }
+      else if (key === ' ') { selected[cursor] = !selected[cursor]; render(); }
+      else if (key === 'a') { const allOn = selected.every(Boolean); selected.fill(!allOn); render(); }
+      else if (key === '\r') {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener('data', onKey);
+        console.log('');
+        done(options.filter((_, i) => selected[i]).map(o => o.value));
+      }
+      else if (key === '\x03') { process.exit(0); }
+    };
+
+    process.stdin.on('data', onKey);
   });
 }
 
