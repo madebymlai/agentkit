@@ -532,7 +532,7 @@ export function ensureBypassPermissions(tools) {
 export function multiSelect(options) {
   return new Promise((done) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-    console.log('\nSelect tools (comma-separated numbers, or "all"):\n');
+    console.log('\nSelect tools (e.g. 1,2 or "all"):\n');
     options.forEach((opt, i) => console.log(`  ${i + 1}) ${opt.label}`));
     console.log('');
     rl.question('> ', (answer) => {
@@ -550,6 +550,8 @@ export function multiSelect(options) {
     });
   });
 }
+
+const CE_REPO = 'EveryInc/compound-engineering-plugin';
 
 const CLAUDE_PLUGINS = [
   { marketplace: 'compound-engineering-plugin', repo: 'EveryInc/compound-engineering-plugin', plugin: 'compound-engineering' },
