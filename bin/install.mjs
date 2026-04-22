@@ -640,16 +640,15 @@ export function installCompoundEngineering(tool) {
     case 'codex': {
       execSync(`codex plugin marketplace add ${CE_REPO}`, { stdio: 'inherit' });
       execSync('bunx @every-env/compound-plugin install compound-engineering --to codex', { stdio: 'inherit' });
-      console.log('\n  Also launch codex, run /plugins, find Compound Engineering, and install from the TUI.');
+      console.log(`  codex: manual step needed — launch codex, run /plugins, find Compound Engineering, install from TUI`);
       break;
     }
     case 'opencode': {
       execSync('bunx @every-env/compound-plugin install compound-engineering --to opencode', { stdio: 'inherit' });
+      console.log(`  opencode: done`);
       break;
     }
   }
-
-  console.log(`  ${tool}: done`);
 }
 
 export function ensureGitignore(entries) {
