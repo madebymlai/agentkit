@@ -531,7 +531,7 @@ export function ensureBypassPermissions(tools) {
 
 export function multiSelect(options) {
   return new Promise((done) => {
-    const selected = options.map(() => true);
+    const selected = options.map(() => false);
     let cursor = 0;
 
     const render = () => {
@@ -546,7 +546,7 @@ export function multiSelect(options) {
     console.log('\nSelect tools (arrows to move, space to toggle, enter to confirm):\n');
     options.forEach((opt, i) => {
       const arrow = i === cursor ? '>' : ' ';
-      console.log(`${arrow} [x] ${opt.label}`);
+      console.log(`${arrow} [ ] ${opt.label}`);
     });
 
     process.stdin.setRawMode(true);
