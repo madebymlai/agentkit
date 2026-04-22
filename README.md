@@ -5,13 +5,13 @@ Setup tool for AI coding agents. Installs and configures tools across Claude Cod
 ## Install
 
 ```bash
-npx @madebymlai/agentkit
+npx github:madebymlai/agentkit
 ```
 
 Project setup only (AGENTS.md, .gitignore):
 
 ```bash
-npx @madebymlai/agentkit --project
+npx github:madebymlai/agentkit --project
 ```
 
 ## What it does
