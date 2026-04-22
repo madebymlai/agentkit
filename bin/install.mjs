@@ -629,6 +629,194 @@ export function installSkills(tools) {
   }
 }
 
+// BEGIN TEMPORARY COMPOUND ENGINEERING CODEX CUSTOM-AGENT COMPAT LAYER
+// Delete this whole block when Codex native plugins support custom agents.
+const CODEX_TOOL_MAP_START = '<!-- BEGIN COMPOUND CODEX TOOL MAP -->';
+const CODEX_TOOL_MAP_END = '<!-- END COMPOUND CODEX TOOL MAP -->';
+const CODEX_CE_AGENT_MANIFEST = '.compound-engineering-manifest.json';
+const CODEX_TOOL_MAP_BODY = `## Compound Codex Tool Mapping (Claude Compatibility)
+
+This section maps Claude Code plugin tool references to Codex behavior.
+Only this block is managed automatically.
+
+Tool mapping:
+- Read: use shell reads (cat/sed) or rg
+- Write: create files via shell redirection or apply_patch
+- Edit/MultiEdit: use apply_patch
+- Bash: use shell_command
+- Grep: use rg (fallback: grep)
+- Glob: use rg --files or find
+- LS: use ls via shell_command
+- WebFetch/WebSearch: use curl or Context7 for library docs
+- AskUserQuestion/Question: present choices as a numbered list in chat and wait for a reply number. For multi-select (multiSelect: true), accept comma-separated numbers. Never skip or auto-configure -- always wait for the user's response before proceeding.
+- Task/Subagent/Parallel: run sequentially in main thread; use multi_tool_use.parallel for tool calls
+- TaskCreate/TaskUpdate/TaskList/TaskGet/TaskStop/TaskOutput: use update_plan
+- TodoWrite/TodoRead: use update_plan
+- Skill: open the referenced SKILL.md and follow it
+- ExitPlanMode: ignore
+`;
+
+function resolveCodexHome() {
+  return process.platform === 'win32'
+    ? win32.join(process.env.APPDATA, 'codex')
+    : resolve(homedir(), '.codex');
+}
+
+function resolveCodexCompoundEngineeringMarketplaceRoot() {
+  const repoName = CE_REPO.replace(/\/+$/, '').split('/').pop();
+  return resolve(resolveCodexHome(), '.tmp', 'marketplaces', repoName);
+}
+
+function parseFrontmatter(content) {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) return { data: {}, body: content.trim() };
+
+  const data = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const sep = trimmed.indexOf(':');
+    if (sep === -1) continue;
+    const key = trimmed.slice(0, sep).trim();
+    let value = trimmed.slice(sep + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith('\'') && value.endsWith('\''))
+    ) {
+      value = value.slice(1, -1);
+    }
+    data[key] = value;
+  }
+
+  return { data, body: match[2].trim() };
+}
+
+function renderCodexAgentToml(name, description, instructions) {
+  return [
+    `name = ${JSON.stringify(name)}`,
+    `description = ${JSON.stringify(description)}`,
+    `developer_instructions = ${JSON.stringify(instructions)}`,
+    '',
+  ].join('\n');
+}
+
+function upsertCodexToolMap(existing, block) {
+  const startIndex = existing.indexOf(CODEX_TOOL_MAP_START);
+  const endIndex = existing.indexOf(CODEX_TOOL_MAP_END);
+
+  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+    const before = existing.slice(0, startIndex).trimEnd();
+    const after = existing.slice(endIndex + CODEX_TOOL_MAP_END.length).trimStart();
+    return [before, block, after].filter(Boolean).join('\n\n') + '\n';
+  }
+
+  if (existing.trim().length === 0) return block + '\n';
+  return existing.trimEnd() + '\n\n' + block + '\n';
+}
+
+function ensureCodexAgentsInstructions(codexHome) {
+  mkdirSync(codexHome, { recursive: true });
+  const agentsPath = resolve(codexHome, 'AGENTS.md');
+  const block = [CODEX_TOOL_MAP_START, CODEX_TOOL_MAP_BODY.trim(), CODEX_TOOL_MAP_END].join('\n');
+
+  if (!existsSync(agentsPath)) {
+    writeFileSync(agentsPath, block + '\n');
+    return;
+  }
+
+  const existing = readFileSync(agentsPath, 'utf8');
+  const updated = upsertCodexToolMap(existing, block);
+  if (updated !== existing) {
+    writeFileSync(agentsPath, updated);
+  }
+}
+
+function assertSafeCodexAgentFile(name, sourcePath) {
+  if (typeof name !== 'string' || name.length === 0 || name.includes('/') || name.includes('\\') || name.includes('..')) {
+    throw new Error(`Invalid Compound Engineering agent name "${name}" at ${sourcePath}`);
+  }
+}
+
+function readCodexCompoundEngineeringManifest(manifestPath) {
+  if (!existsSync(manifestPath)) return [];
+
+  const parsed = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  if (!parsed || !Array.isArray(parsed.agents)) {
+    throw new Error(`Invalid Compound Engineering manifest at ${manifestPath}`);
+  }
+
+  const agents = [];
+  for (const entry of parsed.agents) {
+    if (typeof entry !== 'string' || !entry.endsWith('.toml') || entry.includes('/') || entry.includes('\\') || entry.includes('..')) {
+      throw new Error(`Invalid Compound Engineering manifest entry "${entry}" at ${manifestPath}`);
+    }
+    agents.push(entry);
+  }
+  return agents;
+}
+
+function runCodexCompoundEngineeringAgentInstallHook() {
+  const marketplaceRoot = resolveCodexCompoundEngineeringMarketplaceRoot();
+  const sourceDir = resolve(marketplaceRoot, 'plugins', 'compound-engineering', 'agents');
+  if (!existsSync(sourceDir)) {
+    throw new Error(`Compound Engineering agents not found at ${sourceDir}`);
+  }
+
+  const codexHome = resolveCodexHome();
+  const agentsDir = resolve(codexHome, 'agents');
+  const manifestPath = resolve(agentsDir, CODEX_CE_AGENT_MANIFEST);
+
+  mkdirSync(agentsDir, { recursive: true });
+
+  for (const agentFile of readCodexCompoundEngineeringManifest(manifestPath)) {
+    rmSync(resolve(agentsDir, agentFile), { force: true });
+  }
+
+  let installed = 0;
+  const installedAgentFiles = [];
+  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.agent.md')) continue;
+
+    const sourcePath = resolve(sourceDir, entry.name);
+    const { data, body } = parseFrontmatter(readFileSync(sourcePath, 'utf8'));
+    if (!data.name || !data.description || !body) {
+      throw new Error(`Invalid Compound Engineering agent at ${sourcePath}`);
+    }
+    assertSafeCodexAgentFile(data.name, sourcePath);
+
+    const agentFile = `${data.name}.toml`;
+
+    writeFileSync(
+      resolve(agentsDir, agentFile),
+      renderCodexAgentToml(data.name, data.description, body),
+    );
+    installedAgentFiles.push(agentFile);
+    installed += 1;
+  }
+
+  if (installed === 0) {
+    throw new Error(`No Compound Engineering agents found in ${sourceDir}`);
+  }
+
+  writeFileSync(manifestPath, JSON.stringify({ agents: installedAgentFiles }, null, 2) + '\n');
+  ensureCodexAgentsInstructions(codexHome);
+  console.log(`  codex: installed ${installed} Compound Engineering agents to ${agentsDir}`);
+}
+
+const COMPOUND_ENGINEERING_POST_INSTALL_HOOKS = {
+  codex: [
+    // Remove this hook when Codex native plugins support custom agents.
+    runCodexCompoundEngineeringAgentInstallHook,
+  ],
+};
+
+function runCompoundEngineeringCodexCompatLayer(tool, context = {}) {
+  for (const hook of COMPOUND_ENGINEERING_POST_INSTALL_HOOKS[tool] ?? []) {
+    hook(context);
+  }
+}
+// END TEMPORARY COMPOUND ENGINEERING CODEX CUSTOM-AGENT COMPAT LAYER
+
 export function installCompoundEngineering(tool) {
   console.log(`\nInstalling compound-engineering for ${tool}...`);
 
@@ -639,7 +827,8 @@ export function installCompoundEngineering(tool) {
     }
     case 'codex': {
       execSync(`codex plugin marketplace add ${CE_REPO}`, { stdio: 'inherit' });
-      execSync('bunx @every-env/compound-plugin install compound-engineering --to codex', { stdio: 'inherit' });
+      // Remove this call together with the temporary compat block above.
+      runCompoundEngineeringCodexCompatLayer(tool);
       console.log(`  codex: manual step needed — launch codex, run /plugins, find Compound Engineering, install from TUI`);
       break;
     }
@@ -720,6 +909,9 @@ export function setupProject(tools) {
       + `- **No Silent Error Swallowing** — Never catch an exception and discard it without logging, re-raising, or making the failure visible; every error must produce an observable signal.\n`
       + `- **Explicit Error Types** — Represent each distinct failure mode as a named, typed value in the return signature rather than relying on generic exceptions or sentinel values.\n`
       + `\n`;
+    template += `## Documented Solutions\n\n`
+      + `\`docs/solutions/\` contains documented solutions to past problems and practices (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (\`module\`, \`tags\`, \`problem_type\`). Relevant when implementing, debugging, or making decisions in documented areas.\n`
+      + `\n`;
     template += `# Workflow\n`;
     writeFileSync('AGENTS.md', template);
     console.log('  Created AGENTS.md');
@@ -755,8 +947,8 @@ async function main() {
     return;
   }
 
-  // Ensure bun is available (needed for compound-engineering on codex/opencode)
-  if (!getInstalledVersion('bun')) {
+  // Ensure bun is available when the selected tool flow needs it.
+  if (tools.includes('opencode') && !getInstalledVersion('bun')) {
     console.log('\nInstalling bun...');
     execSync('npm install -g bun', { stdio: 'inherit' });
   }
