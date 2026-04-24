@@ -408,6 +408,56 @@ function mergeCodexMcp(name, entry, configPath) {
   console.log(`  ${configPath}: added "${name}"`);
 }
 
+function codexMcpEnvValue(content, name, envVar) {
+  const section = `[mcp_servers.${name}.env]`;
+  const start = content.indexOf(section);
+  if (start === -1) return null;
+  const rest = content.slice(start + section.length);
+  const nextSection = rest.search(/\n\[/);
+  const body = nextSection === -1 ? rest : rest.slice(0, nextSection);
+  const match = body.match(new RegExp(`^\\s*${envVar}\\s*=\\s*["']([^"']+)["']`, 'm'));
+  return match?.[1] || null;
+}
+
+function hasConcreteEnvValue(value, envVar) {
+  return Boolean(value && value !== `\${${envVar}}`);
+}
+
+function toolHasConcreteMcpEnv(name, tool, envVar) {
+  switch (tool) {
+    case 'claude': {
+      const configPath = resolve(homedir(), '.claude.json');
+      if (!existsSync(configPath)) return false;
+      const config = JSON.parse(readFileSync(configPath, 'utf8'));
+      return hasConcreteEnvValue(config.mcpServers?.[name]?.env?.[envVar], envVar);
+    }
+    case 'opencode': {
+      const isWin = process.platform === 'win32';
+      const configDir = isWin
+        ? win32.join(process.env.APPDATA, 'opencode')
+        : resolve(homedir(), '.config', 'opencode');
+      const configPath = resolve(configDir, 'opencode.json');
+      if (!existsSync(configPath)) return false;
+      const config = JSON.parse(readFileSync(configPath, 'utf8'));
+      return hasConcreteEnvValue(config.mcp?.[name]?.environment?.[envVar], envVar);
+    }
+    case 'codex': {
+      const isWin = process.platform === 'win32';
+      const configPath = isWin
+        ? win32.join(process.env.APPDATA, 'codex', 'config.toml')
+        : resolve(homedir(), '.codex', 'config.toml');
+      if (!existsSync(configPath)) return false;
+      return hasConcreteEnvValue(codexMcpEnvValue(readFileSync(configPath, 'utf8'), name, envVar), envVar);
+    }
+    default:
+      return false;
+  }
+}
+
+function selectedToolsHaveConcreteMcpEnv(name, tools, envVar) {
+  return tools.length > 0 && tools.every(tool => toolHasConcreteMcpEnv(name, tool, envVar));
+}
+
 export function mergeMcpConfig(name, server, tools, envOverrides = {}) {
   if (!server.mcpEntry) return;
   const entry = JSON.parse(JSON.stringify(server.mcpEntry));
@@ -816,9 +866,13 @@ async function main() {
   // API keys
   console.log('\nAPI Keys\n');
   const keys = [];
-  const resolveKey = async (label, envVar) => {
+  const resolveKey = async (label, envVar, configured = false) => {
     if (process.env[envVar]) {
       console.log(`  ${label}: found in environment`);
+      return;
+    }
+    if (configured) {
+      console.log(`  ${label}: already configured`);
       return;
     }
     const k = await promptApiKey(label, envVar);
@@ -827,7 +881,11 @@ async function main() {
       process.env[envVar] = k.value;
     }
   };
-  await resolveKey('Context7', 'CONTEXT7_API_KEY');
+  await resolveKey(
+    'Context7',
+    'CONTEXT7_API_KEY',
+    selectedToolsHaveConcreteMcpEnv('context7', tools, 'CONTEXT7_API_KEY'),
+  );
   if (keys.length) writeEnvVars(keys);
 
   const envOverrides = Object.fromEntries(keys.map(({ key, value }) => [key, value]));
