@@ -487,37 +487,6 @@ function hasConcreteEnvValue(value, envVar) {
   return Boolean(value && value !== `\${${envVar}}`);
 }
 
-function toolHasConcreteMcpEnv(name, tool, envVar) {
-  switch (tool) {
-    case 'claude': {
-      const configPath = resolve(homedir(), '.claude.json');
-      if (!existsSync(configPath)) return false;
-      const config = JSON.parse(readFileSync(configPath, 'utf8'));
-      return hasConcreteEnvValue(config.mcpServers?.[name]?.env?.[envVar], envVar);
-    }
-    case 'opencode': {
-      const isWin = process.platform === 'win32';
-      const configDir = isWin
-        ? win32.join(process.env.APPDATA, 'opencode')
-        : resolve(homedir(), '.config', 'opencode');
-      const configPath = resolve(configDir, 'opencode.json');
-      if (!existsSync(configPath)) return false;
-      const config = JSON.parse(readFileSync(configPath, 'utf8'));
-      return hasConcreteEnvValue(config.mcp?.[name]?.environment?.[envVar], envVar);
-    }
-    case 'codex': {
-      const isWin = process.platform === 'win32';
-      const configPath = isWin
-        ? win32.join(process.env.APPDATA, 'codex', 'config.toml')
-        : resolve(homedir(), '.codex', 'config.toml');
-      if (!existsSync(configPath)) return false;
-      return hasConcreteEnvValue(codexMcpEnvValue(readFileSync(configPath, 'utf8'), name, envVar), envVar);
-    }
-    default:
-      return false;
-  }
-}
-
 function concreteMcpEnvValue(name, tool, envVar) {
   switch (tool) {
     case 'claude': {
@@ -552,16 +521,14 @@ function concreteMcpEnvValue(name, tool, envVar) {
   }
 }
 
-function findConcreteMcpEnvValue(name, tools, envVar) {
-  for (const tool of tools) {
-    const value = concreteMcpEnvValue(name, tool, envVar);
-    if (value) return value;
-  }
-  return null;
-}
-
-function selectedToolsHaveConcreteMcpEnv(name, tools, envVar) {
-  return tools.length > 0 && tools.every(tool => toolHasConcreteMcpEnv(name, tool, envVar));
+function concreteMcpEnvValues(name, envVar) {
+  return [
+    ...new Set(
+      TOOL_OPTIONS
+        .map(tool => concreteMcpEnvValue(name, tool.value, envVar))
+        .filter(Boolean),
+    ),
+  ];
 }
 
 export function mergeMcpConfig(name, server, tools, envOverrides = {}) {
@@ -765,6 +732,50 @@ export function multiSelect(options) {
 
     process.stdin.on('data', onKey);
   });
+}
+
+export function singleSelect(prompt, options) {
+  return new Promise((done) => {
+    let cursor = 0;
+
+    const render = () => {
+      process.stdout.write(`\x1b[${options.length}A`);
+      options.forEach((opt, i) => {
+        const arrow = i === cursor ? '>' : ' ';
+        process.stdout.write(`\x1b[2K${arrow} ${opt.label}\n`);
+      });
+    };
+
+    console.log(`\n${prompt}\n`);
+    options.forEach((opt, i) => {
+      const arrow = i === cursor ? '>' : ' ';
+      console.log(`${arrow} ${opt.label}`);
+    });
+
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    const onKey = (key) => {
+      if (key === '\x1b[A') { cursor = (cursor - 1 + options.length) % options.length; render(); }
+      else if (key === '\x1b[B') { cursor = (cursor + 1) % options.length; render(); }
+      else if (key === '\r') {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener('data', onKey);
+        console.log('');
+        done(options[cursor].value);
+      }
+      else if (key === '\x03') { process.exit(0); }
+    };
+
+    process.stdin.on('data', onKey);
+  });
+}
+
+function maskSecret(value) {
+  if (value.length <= 10) return '*'.repeat(value.length);
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
 const TOOL_OPTIONS = [
@@ -987,33 +998,43 @@ async function main() {
   console.log('\nAPI Keys\n');
   const keys = [];
   const envOverrides = {};
-  const resolveKey = async (label, envVar, configured = false, configuredValue = null) => {
+  const resolveKey = async (label, envVar) => {
     if (process.env[envVar]) {
       console.log(`  ${label}: found in environment`);
       return;
     }
-    if (configuredValue) {
+
+    const configuredValues = concreteMcpEnvValues('context7', envVar);
+    if (configuredValues.length === 1) {
+      const configuredValue = configuredValues[0];
       envOverrides[envVar] = configuredValue;
       process.env[envVar] = configuredValue;
+      keys.push({ key: envVar, value: configuredValue });
       console.log(`  ${label}: found in existing tool config`);
       return;
     }
-    if (configured) {
-      console.log(`  ${label}: already configured`);
+    if (configuredValues.length > 1) {
+      const configuredValue = await singleSelect(
+        `${label}: multiple existing values found. Select one to use:`,
+        configuredValues.map(value => ({
+          label: maskSecret(value),
+          value,
+        })),
+      );
+      envOverrides[envVar] = configuredValue;
+      process.env[envVar] = configuredValue;
+      keys.push({ key: envVar, value: configuredValue });
+      console.log(`  ${label}: selected existing tool config value`);
       return;
     }
+
     const k = await promptApiKey(label, envVar);
     if (k) {
       keys.push(k);
       process.env[envVar] = k.value;
     }
   };
-  await resolveKey(
-    'Context7',
-    'CONTEXT7_API_KEY',
-    selectedToolsHaveConcreteMcpEnv('context7', tools, 'CONTEXT7_API_KEY'),
-    findConcreteMcpEnvValue('context7', tools, 'CONTEXT7_API_KEY'),
-  );
+  await resolveKey('Context7', 'CONTEXT7_API_KEY');
   if (keys.length) writeEnvVars(keys);
 
   Object.assign(envOverrides, Object.fromEntries(keys.map(({ key, value }) => [key, value])));
