@@ -8,10 +8,18 @@ Setup tool for AI coding agents. Installs and configures tools across Claude Cod
 npx github:madebymlai/agentkit
 ```
 
+Skip the interactive selector:
+
+```bash
+npx github:madebymlai/agentkit --claude --codex
+npx github:madebymlai/agentkit --opencode
+```
+
 Project setup only (AGENTS.md, .gitignore):
 
 ```bash
 npx github:madebymlai/agentkit --project
+npx github:madebymlai/agentkit --project --codex
 ```
 
 ## What it does

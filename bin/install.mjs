@@ -352,6 +352,10 @@ function resolveEnvPlaceholders(env, envOverrides) {
   return resolved;
 }
 
+function concreteEnvEntries(env = {}) {
+  return Object.entries(env).filter(([k, v]) => hasConcreteEnvValue(v, k));
+}
+
 function mergeClaudeMcp(name, entry, configPath) {
   let config = {};
   if (existsSync(configPath)) {
@@ -359,6 +363,19 @@ function mergeClaudeMcp(name, entry, configPath) {
   }
   config.mcpServers ??= {};
   if (config.mcpServers[name]) {
+    let changed = false;
+    for (const [k, v] of concreteEnvEntries(entry.env)) {
+      config.mcpServers[name].env ??= {};
+      if (!hasConcreteEnvValue(config.mcpServers[name].env[k], k)) {
+        config.mcpServers[name].env[k] = v;
+        changed = true;
+      }
+    }
+    if (changed) {
+      writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+      console.log(`  ${configPath}: updated "${name}" environment`);
+      return;
+    }
     console.log(`  ${configPath}: "${name}" already configured`);
     return;
   }
@@ -374,6 +391,19 @@ function mergeOpencodeMcp(name, entry, configPath) {
   }
   config.mcp ??= {};
   if (config.mcp[name]) {
+    let changed = false;
+    for (const [k, v] of concreteEnvEntries(entry.env)) {
+      config.mcp[name].environment ??= {};
+      if (!hasConcreteEnvValue(config.mcp[name].environment[k], k)) {
+        config.mcp[name].environment[k] = v;
+        changed = true;
+      }
+    }
+    if (changed) {
+      writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+      console.log(`  ${configPath}: updated "${name}" environment`);
+      return;
+    }
     console.log(`  ${configPath}: "${name}" already configured`);
     return;
   }
@@ -394,6 +424,17 @@ function mergeCodexMcp(name, entry, configPath) {
   }
   const header = `[mcp_servers.${name}]`;
   if (content.includes(header)) {
+    let nextContent = content;
+    for (const [k, v] of concreteEnvEntries(entry.env)) {
+      const current = codexMcpEnvValue(nextContent, name, k);
+      if (hasConcreteEnvValue(current, k)) continue;
+      nextContent = setCodexMcpEnvValue(nextContent, name, k, v);
+    }
+    if (nextContent !== content) {
+      writeFileSync(configPath, nextContent);
+      console.log(`  ${configPath}: updated "${name}" environment`);
+      return;
+    }
     console.log(`  ${configPath}: "${name}" already configured`);
     return;
   }
@@ -417,6 +458,29 @@ function codexMcpEnvValue(content, name, envVar) {
   const body = nextSection === -1 ? rest : rest.slice(0, nextSection);
   const match = body.match(new RegExp(`^\\s*${envVar}\\s*=\\s*["']([^"']+)["']`, 'm'));
   return match?.[1] || null;
+}
+
+function setCodexMcpEnvValue(content, name, envVar, value) {
+  const section = `[mcp_servers.${name}.env]`;
+  const start = content.indexOf(section);
+  if (start === -1) {
+    const prefix = content.endsWith('\n') ? '' : '\n';
+    return content + `${prefix}\n${section}\n${envVar} = "${value}"\n`;
+  }
+
+  const bodyStart = start + section.length;
+  const rest = content.slice(bodyStart);
+  const nextSectionOffset = rest.search(/\n\[/);
+  const bodyEnd = nextSectionOffset === -1 ? content.length : bodyStart + nextSectionOffset;
+  const body = content.slice(bodyStart, bodyEnd);
+  const linePattern = new RegExp(`(^\\s*${envVar}\\s*=\\s*)["'][^"']*["']`, 'm');
+  if (linePattern.test(body)) {
+    const updatedBody = body.replace(linePattern, (_, prefix) => `${prefix}"${value}"`);
+    return content.slice(0, bodyStart) + updatedBody + content.slice(bodyEnd);
+  }
+
+  const insert = `${body.endsWith('\n') ? '' : '\n'}${envVar} = "${value}"\n`;
+  return content.slice(0, bodyEnd) + insert + content.slice(bodyEnd);
 }
 
 function hasConcreteEnvValue(value, envVar) {
@@ -661,6 +725,18 @@ export function multiSelect(options) {
   });
 }
 
+const TOOL_OPTIONS = [
+  { label: 'Claude Code', value: 'claude', flag: '--claude' },
+  { label: 'Codex', value: 'codex', flag: '--codex' },
+  { label: 'OpenCode', value: 'opencode', flag: '--opencode' },
+];
+
+export function toolsFromFlags(args = process.argv.slice(2)) {
+  return TOOL_OPTIONS
+    .filter(tool => args.includes(tool.flag))
+    .map(tool => tool.value);
+}
+
 const CE_REPO = 'EveryInc/compound-engineering-plugin';
 
 const CLAUDE_PLUGINS = [
@@ -809,11 +885,15 @@ export function setupProject(tools) {
 }
 
 async function main() {
-  const projectOnly = process.argv.includes('--project') || process.argv.includes('-p');
+  const args = process.argv.slice(2);
+  const projectOnly = args.includes('--project') || args.includes('-p');
+  const selectedByFlags = toolsFromFlags(args);
 
   if (projectOnly) {
     console.log('agentkit project setup\n');
-    const tools = ['claude', 'codex', 'opencode'];
+    const tools = selectedByFlags.length
+      ? selectedByFlags
+      : TOOL_OPTIONS.map(tool => tool.value);
     setupProject(tools);
     console.log('\nDone.');
     return;
@@ -821,11 +901,9 @@ async function main() {
 
   console.log('agentkit\n');
 
-  const tools = await multiSelect([
-    { label: 'Claude Code', value: 'claude' },
-    { label: 'Codex', value: 'codex' },
-    { label: 'OpenCode', value: 'opencode' },
-  ]);
+  const tools = selectedByFlags.length
+    ? selectedByFlags
+    : await multiSelect(TOOL_OPTIONS);
 
   if (!tools.length) {
     console.log('Nothing selected.');
