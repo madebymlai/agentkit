@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, readdirSync, copyFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { resolve, dirname, win32 } from 'node:path';
+import { resolve, dirname, win32, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir, tmpdir } from 'node:os';
 
@@ -27,6 +27,7 @@ export function copyDirMerge(src, dest, { overwrite = false } = {}) {
 export function getInstalledVersion(binName) {
   try {
     const output = execSync(`${binName} --version`, {
+      env: envWithInstallerBinOnPath(),
       encoding: 'utf8',
       timeout: 5000,
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -73,6 +74,20 @@ export function getPlatformPaths() {
     dataDir: resolve(homedir(), '.local', 'share', 'installer'),
     configDir: resolve(homedir(), '.config', 'installer'),
     binDir: resolve(homedir(), '.local', 'bin'),
+  };
+}
+
+export function envWithInstallerBinOnPath(env = process.env) {
+  const { binDir } = getPlatformPaths();
+  const pathKey = process.platform === 'win32'
+    ? Object.keys(env).find(k => k.toLowerCase() === 'path') || 'Path'
+    : 'PATH';
+  const current = env[pathKey] || '';
+  const pathDirs = current ? current.split(delimiter) : [];
+  if (pathDirs.includes(binDir)) return { ...env };
+  return {
+    ...env,
+    [pathKey]: [binDir, current].filter(Boolean).join(delimiter),
   };
 }
 
@@ -240,8 +255,7 @@ export async function installFromGithubRelease(name, ghConfig) {
   rmSync(tmpDir, { recursive: true });
 
   // 5. Warn if install dir not on PATH
-  const pathSep = process.platform === 'win32' ? ';' : ':';
-  const pathDirs = (process.env.PATH || '').split(pathSep);
+  const pathDirs = (process.env.PATH || '').split(delimiter);
   if (!pathDirs.includes(installDir)) {
     console.log(`  Warning: ${installDir} is not on your PATH. Add it to your shell profile.`);
   }
@@ -301,7 +315,7 @@ export function runPostInstall(name, server) {
 
   console.log(`Configuring ${name}...`);
   for (const cmd of cmds) {
-    execSync(cmd, { stdio: 'inherit' });
+    execSync(cmd, { stdio: 'inherit', env: envWithInstallerBinOnPath() });
   }
 
   // Restore any PreToolUse hooks that tokf may have overwritten
