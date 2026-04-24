@@ -528,13 +528,20 @@ export function ensureBypassPermissions(tools) {
         if (existsSync(configPath)) {
           content = readFileSync(configPath, 'utf8');
         }
-        if (content.includes('approval_policy')) {
+        const settings = [];
+        if (!content.includes('approval_policy')) {
+          settings.push('approval_policy = "never"');
+        }
+        if (!content.includes('sandbox_mode')) {
+          settings.push('sandbox_mode = "danger-full-access"');
+        }
+        if (!settings.length) {
           console.log(`  codex: already set`);
           break;
         }
         mkdirSync(dirname(configPath), { recursive: true });
-        writeFileSync(configPath, `approval_policy = "never"\n` + content);
-        console.log(`  codex: approval_policy = "never" in ${configPath}`);
+        writeFileSync(configPath, settings.join('\n') + '\n' + content);
+        console.log(`  codex: ${settings.join(', ')} in ${configPath}`);
         break;
       }
       case 'opencode': {
