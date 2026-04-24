@@ -2,6 +2,7 @@
 
 import https from 'node:https';
 import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, readdirSync, copyFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { resolve, dirname, win32 } from 'node:path';
@@ -25,7 +26,11 @@ export function copyDirMerge(src, dest, { overwrite = false } = {}) {
 
 export function getInstalledVersion(binName) {
   try {
-    const output = execSync(`${binName} --version`, { encoding: 'utf8', timeout: 5000 }).trim();
+    const output = execSync(`${binName} --version`, {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
     const match = output.match(/(\d+\.\d+\.\d+)/);
     return match ? match[1] : null;
   } catch {
@@ -89,6 +94,22 @@ export function detectTarget() {
   return { ...entry, installDir: binDir };
 }
 
+export function verifySha256Checksum(filePath, checksumPath, assetName) {
+  const shaRaw = readFileSync(checksumPath, 'utf8').trim();
+  const expected = shaRaw.match(/[a-fA-F0-9]{64}/)?.[0]?.toLowerCase();
+  if (!expected) {
+    throw new Error(`Invalid SHA256 checksum file for ${assetName}`);
+  }
+
+  const actual = createHash('sha256')
+    .update(readFileSync(filePath))
+    .digest('hex');
+
+  if (actual !== expected) {
+    throw new Error(`Checksum mismatch for ${assetName}: expected ${expected}, got ${actual}`);
+  }
+}
+
 export const REGISTRY = {
   'tokf': {
     platforms: ['linux-x86_64', 'darwin-arm64', 'darwin-x86_64'],
@@ -146,9 +167,6 @@ export async function installFromGithubRelease(name, ghConfig) {
     console.log(`  Skipping ${name}: no build for ${target.key}`);
     return false;
   }
-
-  console.log(`\nInstalling ${name}...`);
-
   // 1. Resolve latest release
   const releases = await httpsGetJson(
     `https://api.github.com/repos/${ghConfig.repo}/releases`
@@ -165,8 +183,13 @@ export async function installFromGithubRelease(name, ghConfig) {
     : (process.platform === 'win32' ? ghConfig.binName.win32 : ghConfig.binName.unix);
   const installed = getInstalledVersion(bin);
   if (installed && installed === latestVersion) {
-    console.log(`  ${name} ${installed} is up to date`);
+    console.log(`\n  ${name} ${installed} is up to date`);
     return true;
+  }
+  if (installed) {
+    console.log(`\n${name} ${installed} found; installing ${latestVersion}...`);
+  } else {
+    console.log(`\n${name} not found; installing ${latestVersion}...`);
   }
 
   const ext = process.platform === 'win32' ? '.zip' : '.tar.gz';
@@ -191,12 +214,7 @@ export async function installFromGithubRelease(name, ghConfig) {
     execSync(`curl -fsSL -o "${tarball}.sha256" "${shaAsset.browser_download_url}"`, {
       stdio: 'inherit', shell: '/bin/bash',
     });
-    const shaRaw = readFileSync(`${tarball}.sha256`, 'utf8').trim();
-    const shaLine = shaRaw.includes('  ') ? shaRaw : `${shaRaw}  ${assetName}`;
-    writeFileSync(`${tarball}.sha256`, shaLine + '\n');
-    execSync(`cd "${tmpDir}" && shasum -a 256 -c "${tarball}.sha256"`, {
-      stdio: 'inherit', shell: '/bin/bash',
-    });
+    verifySha256Checksum(tarball, `${tarball}.sha256`, assetName);
     console.log(`  Checksum verified.`);
   } else {
     console.log(`  Warning: no .sha256 asset found, skipping verification.`);
