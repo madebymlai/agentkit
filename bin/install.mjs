@@ -579,6 +579,43 @@ export function promptApiKey(name, envVar) {
   });
 }
 
+export async function resolveApiKey({ label, serverName, envVar }, { keys, envOverrides }) {
+  if (process.env[envVar]) {
+    console.log(`  ${label}: found in environment`);
+    return;
+  }
+
+  const configuredValues = concreteMcpEnvValues(serverName, envVar);
+  if (configuredValues.length === 1) {
+    const configuredValue = configuredValues[0];
+    envOverrides[envVar] = configuredValue;
+    process.env[envVar] = configuredValue;
+    keys.push({ key: envVar, value: configuredValue });
+    console.log(`  ${label}: found in existing tool config`);
+    return;
+  }
+  if (configuredValues.length > 1) {
+    const configuredValue = await singleSelect(
+      `${label}: multiple existing values found. Select one to use:`,
+      configuredValues.map(value => ({
+        label: maskSecret(value),
+        value,
+      })),
+    );
+    envOverrides[envVar] = configuredValue;
+    process.env[envVar] = configuredValue;
+    keys.push({ key: envVar, value: configuredValue });
+    console.log(`  ${label}: selected existing tool config value`);
+    return;
+  }
+
+  const k = await promptApiKey(label, envVar);
+  if (k) {
+    keys.push(k);
+    process.env[envVar] = k.value;
+  }
+}
+
 function getShellProfile() {
   const shell = process.env.SHELL || '';
   if (shell.endsWith('/zsh')) return resolve(homedir(), '.zshrc');
@@ -998,43 +1035,12 @@ async function main() {
   console.log('\nAPI Keys\n');
   const keys = [];
   const envOverrides = {};
-  const resolveKey = async (label, envVar) => {
-    if (process.env[envVar]) {
-      console.log(`  ${label}: found in environment`);
-      return;
-    }
-
-    const configuredValues = concreteMcpEnvValues('context7', envVar);
-    if (configuredValues.length === 1) {
-      const configuredValue = configuredValues[0];
-      envOverrides[envVar] = configuredValue;
-      process.env[envVar] = configuredValue;
-      keys.push({ key: envVar, value: configuredValue });
-      console.log(`  ${label}: found in existing tool config`);
-      return;
-    }
-    if (configuredValues.length > 1) {
-      const configuredValue = await singleSelect(
-        `${label}: multiple existing values found. Select one to use:`,
-        configuredValues.map(value => ({
-          label: maskSecret(value),
-          value,
-        })),
-      );
-      envOverrides[envVar] = configuredValue;
-      process.env[envVar] = configuredValue;
-      keys.push({ key: envVar, value: configuredValue });
-      console.log(`  ${label}: selected existing tool config value`);
-      return;
-    }
-
-    const k = await promptApiKey(label, envVar);
-    if (k) {
-      keys.push(k);
-      process.env[envVar] = k.value;
-    }
-  };
-  await resolveKey('Context7', 'CONTEXT7_API_KEY');
+  const resolveKey = (spec) => resolveApiKey(spec, { keys, envOverrides });
+  await resolveKey({
+    label: 'Context7',
+    serverName: 'context7',
+    envVar: 'CONTEXT7_API_KEY',
+  });
   if (keys.length) writeEnvVars(keys);
 
   Object.assign(envOverrides, Object.fromEntries(keys.map(({ key, value }) => [key, value])));
