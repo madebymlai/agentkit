@@ -662,7 +662,9 @@ const CODEX_MULTI_AGENT_USAGE_HINT_SETTINGS = `usage_hint_enabled = true
 usage_hint_text = '''
 Use \`spawn_agent\` autonomously when delegation materially improves the task.
 
-Repository or workspace instructions such as AGENTS.md may define when and how delegation is appropriate. Treat those instructions as the user's standing delegation policy for the workspace. Do not require a separate live user request before spawning subagents.
+For non-implementation coding tasks, call \`spawn_agent\` with the mini model.
+
+Repository or workspace instructions such as AGENTS.md or skills may define when and how delegation is appropriate. Treat those instructions as the user's standing delegation policy for the workspace. Do not require a separate live user request before spawning subagents.
 '''`;
 
 function codexMultiAgentUsageHintBlock({ includeSection = true } = {}) {
