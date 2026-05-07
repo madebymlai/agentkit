@@ -1,25 +1,25 @@
-# agentkit
+# agentstack
 
 Setup tool for AI coding agents. Installs and configures tools across Claude Code, Codex, and OpenCode.
 
 ## Install
 
 ```bash
-npx github:madebymlai/agentkit
+npx github:madebymlai/agentstack
 ```
 
 Skip the interactive selector:
 
 ```bash
-npx github:madebymlai/agentkit --claude --codex
-npx github:madebymlai/agentkit --opencode
+npx github:madebymlai/agentstack --claude --codex
+npx github:madebymlai/agentstack --opencode
 ```
 
 Project setup only (AGENTS.md, .gitignore):
 
 ```bash
-npx github:madebymlai/agentkit --project
-npx github:madebymlai/agentkit --project --codex
+npx github:madebymlai/agentstack --project
+npx github:madebymlai/agentstack --project --codex
 ```
 
 ## What it does
@@ -35,7 +35,7 @@ Prompts you to select which tools you use (Claude Code, Codex, OpenCode), then:
 | **AGENTS.md** | Principles template + tokf section |
 | **.gitignore** | Ignores .claude/, .codex/, .opencode/, CLAUDE.md, AGENTS.md |
 
-## /agentkit skill
+## /agentstack skill
 
 Bundled skill installed globally for all selected tools. Interactive project setup:
 

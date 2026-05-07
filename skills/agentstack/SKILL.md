@@ -1,5 +1,5 @@
 ---
-name: agentkit
+name: agentstack
 description: Interactive project setup — coding principles and tokf filters.
 argument-hint: ""
 ---
