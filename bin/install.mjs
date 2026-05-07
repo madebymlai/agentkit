@@ -662,9 +662,9 @@ export function writeEnvVars(keys) {
   }
 }
 
-// BEGIN agentkit codex multi-agent usage hint
-const CODEX_MULTI_AGENT_USAGE_HINT_BEGIN = '# >>> agentkit codex multi-agent usage hint';
-const CODEX_MULTI_AGENT_USAGE_HINT_END = '# <<< agentkit codex multi-agent usage hint';
+// BEGIN agentstack codex multi-agent usage hint
+const CODEX_MULTI_AGENT_USAGE_HINT_BEGIN = '# >>> agentstack codex multi-agent usage hint';
+const CODEX_MULTI_AGENT_USAGE_HINT_END = '# <<< agentstack codex multi-agent usage hint';
 const CODEX_MULTI_AGENT_USAGE_HINT_SECTION = '[features.multi_agent_v2]';
 const CODEX_MULTI_AGENT_USAGE_HINT_KEYS = ['usage_hint_enabled', 'usage_hint_text'];
 const CODEX_MULTI_AGENT_USAGE_HINT_SETTINGS = `usage_hint_enabled = true
@@ -800,7 +800,7 @@ export function ensureCodexMultiAgentUsageHint(content) {
     codexMultiAgentUsageHintBlock({ includeSection: true }),
   );
 }
-// END agentkit codex multi-agent usage hint
+// END agentstack codex multi-agent usage hint
 
 /**
  * @unused Reserved API-key collection + MCP config pattern for future installer steps.
@@ -864,13 +864,13 @@ export function ensureBypassPermissions(tools) {
         let nextContent = settings.length
           ? settings.join('\n') + '\n' + content
           : content;
-        // BEGIN agentkit codex multi-agent usage hint
+        // BEGIN agentstack codex multi-agent usage hint
         const withUsageHint = ensureCodexMultiAgentUsageHint(nextContent);
         if (withUsageHint !== nextContent) {
           settings.push('features.multi_agent_v2 usage hint');
           nextContent = withUsageHint;
         }
-        // END agentkit codex multi-agent usage hint
+        // END agentstack codex multi-agent usage hint
         if (!settings.length) {
           console.log(`  codex: already set`);
           break;
@@ -1082,7 +1082,7 @@ export function ensureGitignore(entries) {
 }
 
 export function installBundledSkills(tools) {
-  console.log('\nInstalling agentkit skills...');
+  console.log('\nInstalling agentstack skills...');
   const srcDir = resolve(__dir, '..', 'skills');
   if (!existsSync(srcDir)) return;
 
@@ -1156,7 +1156,7 @@ async function main() {
   const selectedByFlags = toolsFromFlags(args);
 
   if (projectOnly) {
-    console.log('agentkit project setup\n');
+    console.log('agentstack project setup\n');
     const tools = selectedByFlags.length
       ? selectedByFlags
       : TOOL_OPTIONS.map(tool => tool.value);
@@ -1165,7 +1165,7 @@ async function main() {
     return;
   }
 
-  console.log('agentkit\n');
+  console.log('agentstack\n');
 
   const tools = selectedByFlags.length
     ? selectedByFlags
@@ -1203,7 +1203,7 @@ async function main() {
     installCompoundEngineering(tool);
   }
 
-  // Bundled agentkit skills
+  // Bundled agentstack skills
   installBundledSkills(tools);
 
   ensureBypassPermissions(tools);
