@@ -138,7 +138,11 @@ export const REGISTRY = {
       },
       binName: 'tokf',
     },
-    postInstall: ['tokf hook install --global'],
+    postInstall: {
+      claude: ['tokf hook install --global'],
+      opencode: ['tokf hook install --tool opencode --global'],
+      codex: ['tokf hook install --tool codex --global'],
+    },
   },
   'codebase-memory': {
     binName: 'codebase-memory-mcp',
@@ -154,15 +158,6 @@ export const REGISTRY = {
       'codebase-memory-mcp config set auto_index true',
       'codebase-memory-mcp config set auto_index_limit 50000',
     ],
-  },
-  'context7': {
-    mcpEntry: {
-      command: 'npx',
-      args: ['-y', '@upstash/context7-mcp'],
-      env: {
-        CONTEXT7_API_KEY: '${CONTEXT7_API_KEY}',
-      },
-    },
   },
 };
 
@@ -300,13 +295,18 @@ export async function installBinary(name, server) {
   return true;
 }
 
-export function runPostInstall(name, server) {
+function postInstallCommands(postInstall, tools) {
+  if (Array.isArray(postInstall)) return postInstall;
+  return tools.flatMap(tool => postInstall[tool] || []);
+}
+
+export function runPostInstall(name, server, tools = []) {
   const pi = server.postInstall;
   if (!pi) return;
-  const cmds = Array.isArray(pi) ? pi : null;
+  const cmds = postInstallCommands(pi, tools);
   if (!cmds?.length) return;
 
-  // Back up settings.json before postInstall (tokf hook install --global may overwrite PreToolUse)
+  // Back up settings.json before postInstall (tokf hook installs may overwrite PreToolUse)
   const settingsPath = resolve(homedir(), '.claude', 'settings.json');
   let settingsBefore = null;
   if (existsSync(settingsPath)) {
@@ -563,6 +563,9 @@ export function mergeMcpConfig(name, server, tools, envOverrides = {}) {
   }
 }
 
+/**
+ * @unused Reserved API-key prompt pattern for future installer steps.
+ */
 export function promptApiKey(name, envVar) {
   return new Promise((done) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -579,6 +582,9 @@ export function promptApiKey(name, envVar) {
   });
 }
 
+/**
+ * @unused Reserved API-key discovery pattern for future installer steps.
+ */
 export async function resolveApiKey({ label, serverName, envVar }, { keys, envOverrides }) {
   if (process.env[envVar]) {
     console.log(`  ${label}: found in environment`);
@@ -623,6 +629,9 @@ function getShellProfile() {
   return resolve(homedir(), '.bashrc');
 }
 
+/**
+ * @unused Reserved API-key persistence pattern for future installer steps.
+ */
 export function writeEnvVars(keys) {
   if (!keys.length) return;
 
@@ -793,6 +802,23 @@ export function ensureCodexMultiAgentUsageHint(content) {
 }
 // END agentkit codex multi-agent usage hint
 
+/**
+ * @unused Reserved API-key collection + MCP config pattern for future installer steps.
+ */
+export async function mergeMcpConfigWithApiKeys(name, server, tools, keySpecs) {
+  console.log('\nAPI Keys\n');
+  const keys = [];
+  const envOverrides = {};
+
+  for (const spec of keySpecs) {
+    await resolveApiKey(spec, { keys, envOverrides });
+  }
+
+  if (keys.length) writeEnvVars(keys);
+
+  Object.assign(envOverrides, Object.fromEntries(keys.map(({ key, value }) => [key, value])));
+  mergeMcpConfig(name, server, tools, envOverrides);
+}
 
 
 export function ensureBypassPermissions(tools) {
@@ -1158,7 +1184,6 @@ async function main() {
 
   // Binaries (version-checked)
   for (const [name, server] of Object.entries(REGISTRY)) {
-    if (name === 'context7') continue;
     if (server.platforms) {
       const target = detectTarget();
       if (!target || !server.platforms.includes(target.key)) {
@@ -1168,7 +1193,7 @@ async function main() {
     }
     const installed = await installBinary(name, server);
     if (!installed) continue;
-    runPostInstall(name, server);
+    runPostInstall(name, server, tools);
     mergeMcpConfig(name, server, tools);
     console.log(`\n${name}: done`);
   }
@@ -1180,21 +1205,6 @@ async function main() {
 
   // Bundled agentkit skills
   installBundledSkills(tools);
-
-  // API keys
-  console.log('\nAPI Keys\n');
-  const keys = [];
-  const envOverrides = {};
-  const resolveKey = (spec) => resolveApiKey(spec, { keys, envOverrides });
-  await resolveKey({
-    label: 'Context7',
-    serverName: 'context7',
-    envVar: 'CONTEXT7_API_KEY',
-  });
-  if (keys.length) writeEnvVars(keys);
-
-  Object.assign(envOverrides, Object.fromEntries(keys.map(({ key, value }) => [key, value])));
-  mergeMcpConfig('context7', REGISTRY['context7'], tools, envOverrides);
 
   ensureBypassPermissions(tools);
   setupProject(tools);
