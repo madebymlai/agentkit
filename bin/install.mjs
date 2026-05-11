@@ -83,12 +83,23 @@ export function envWithInstallerBinOnPath(env = process.env) {
     ? Object.keys(env).find(k => k.toLowerCase() === 'path') || 'Path'
     : 'PATH';
   const current = env[pathKey] || '';
+  const extra = [binDir];
+  if (process.platform !== 'win32') extra.push(resolve(homedir(), '.bun', 'bin'));
   const pathDirs = current ? current.split(delimiter) : [];
-  if (pathDirs.includes(binDir)) return { ...env };
+  const missing = extra.filter(d => !pathDirs.includes(d));
+  if (!missing.length) return { ...env };
   return {
     ...env,
-    [pathKey]: [binDir, current].filter(Boolean).join(delimiter),
+    [pathKey]: [...missing, current].filter(Boolean).join(delimiter),
   };
+}
+
+export function installBun() {
+  if (process.platform === 'win32') {
+    execSync('powershell -NoProfile -Command "irm bun.sh/install.ps1 | iex"', { stdio: 'inherit' });
+  } else {
+    execSync('curl -fsSL https://bun.sh/install | bash', { stdio: 'inherit', shell: '/bin/bash' });
+  }
 }
 
 const TARGET_MAP = {
@@ -1179,7 +1190,7 @@ async function main() {
   // Ensure bun is available when the selected tool flow needs it.
   if ((tools.includes('codex') || tools.includes('opencode')) && !getInstalledVersion('bun')) {
     console.log('\nInstalling bun...');
-    execSync('npm install -g bun', { stdio: 'inherit' });
+    installBun();
   }
 
   // Binaries (version-checked)
