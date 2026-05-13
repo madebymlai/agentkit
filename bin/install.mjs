@@ -77,6 +77,12 @@ export function getPlatformPaths() {
   };
 }
 
+export function getOpencodeConfigDir() {
+  return process.platform === 'win32'
+    ? win32.join(process.env.APPDATA, 'opencode')
+    : resolve(homedir(), '.config', 'opencode');
+}
+
 export function envWithInstallerBinOnPath(env = process.env) {
   const { binDir } = getPlatformPaths();
   const pathKey = process.platform === 'win32'
@@ -507,13 +513,10 @@ function concreteMcpEnvValue(name, tool, envVar) {
       const value = config.mcpServers?.[name]?.env?.[envVar];
       return hasConcreteEnvValue(value, envVar) ? value : null;
     }
-    case 'opencode': {
-      const isWin = process.platform === 'win32';
-      const configDir = isWin
-        ? win32.join(process.env.APPDATA, 'opencode')
-        : resolve(homedir(), '.config', 'opencode');
-      const configPath = resolve(configDir, 'opencode.json');
-      if (!existsSync(configPath)) return null;
+      case 'opencode': {
+        const configDir = getOpencodeConfigDir();
+        const configPath = resolve(configDir, 'opencode.json');
+        if (!existsSync(configPath)) return null;
       const config = JSON.parse(readFileSync(configPath, 'utf8'));
       const value = config.mcp?.[name]?.environment?.[envVar];
       return hasConcreteEnvValue(value, envVar) ? value : null;
@@ -555,10 +558,7 @@ export function mergeMcpConfig(name, server, tools, envOverrides = {}) {
         mergeClaudeMcp(name, entry, resolve(homedir(), '.claude.json'));
         break;
       case 'opencode': {
-        const isWin = process.platform === 'win32';
-        const configDir = isWin
-          ? win32.join(process.env.APPDATA, 'opencode')
-          : resolve(homedir(), '.config', 'opencode');
+        const configDir = getOpencodeConfigDir();
         mergeOpencodeMcp(name, entry, resolve(configDir, 'opencode.json'));
         break;
       }
@@ -1109,14 +1109,39 @@ export function installBundledSkills(tools) {
       case 'opencode': {
         const isWin = process.platform === 'win32';
         destDir = isWin
-          ? win32.join(process.env.APPDATA, 'opencode', 'skills')
-          : resolve(homedir(), '.config', 'opencode', 'skills');
+          ? win32.join(getOpencodeConfigDir(), 'skills')
+          : resolve(getOpencodeConfigDir(), 'skills');
         break;
       }
     }
     copyDirMerge(srcDir, destDir, { overwrite: true });
     console.log(`  ${tool}: ${destDir}`);
   }
+}
+
+export function installOpencodeToolMap(tools) {
+  if (!tools.includes('opencode')) return;
+
+  const configDir = getOpencodeConfigDir();
+  const agentsPath = resolve(configDir, 'AGENTS.md');
+  const toolMapPath = resolve(__dir, 'opencode-tool-map.txt');
+  const toolMap = readFileSync(toolMapPath, 'utf8').trim() + '\n';
+  const begin = '<!-- BEGIN COMPOUND OPENCODE TOOL MAP -->';
+  const end = '<!-- END COMPOUND OPENCODE TOOL MAP -->';
+  const blockPattern = new RegExp(`${begin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${end.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n?`);
+
+  mkdirSync(configDir, { recursive: true });
+  const existing = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : '';
+  const withoutBlock = existing.replace(blockPattern, '').trimEnd();
+  const next = `${withoutBlock}${withoutBlock ? '\n\n' : ''}${toolMap}`;
+
+  if (existing === next) {
+    console.log(`  opencode: tool map already set in ${agentsPath}`);
+    return;
+  }
+
+  writeFileSync(agentsPath, next);
+  console.log(`  opencode: updated ${agentsPath}`);
 }
 
 export function setupProject(tools) {
@@ -1128,29 +1153,10 @@ export function setupProject(tools) {
   ensureGitignore(['.claude/', '.codex/', '.opencode/', 'CLAUDE.md', 'AGENTS.md', '.mcp.json']);
 
   if (!existsSync('AGENTS.md')) {
-    let template = '';
+    let template = readFileSync(resolve(__dir, 'agents-template.txt'), 'utf8');
     if (getInstalledVersion('tokf')) {
-      template += `# tokf\n\n🗜️ means this output was compressed by tokf.\nRun \`tokf raw last\` to see the full uncompressed output of the last command.\n\n`;
+      template = `# tokf\n\n🗜️ means this output was compressed by tokf.\nRun \`tokf raw last\` to see the full uncompressed output of the last command.\n\n${template}`;
     }
-    template += `# Principles\n\n`
-      + `- **SRP** — A module should have one, and only one, reason to change: responsible to one actor.\n`
-      + `- **OCP** — Software entities should be open for extension but closed for modification.\n`
-      + `- **LSP** — Objects of a supertype shall be replaceable with objects of a subtype without altering program correctness.\n`
-      + `- **ISP** — No client should be forced to depend on methods it does not use; prefer many client-specific interfaces over one general-purpose interface.\n`
-      + `- **DIP** — High-level modules should not depend on low-level modules — both should depend on abstractions; abstractions should not depend on details.\n`
-      + `- **KISS** — Every system works best when simplicity is a key goal and unnecessary complexity is avoided.\n`
-      + `- **DRY** — Every piece of knowledge must have a single, unambiguous, authoritative representation within a system.\n`
-      + `- **Forward-First** — Design for the current and next contract version; never introduce backward-compatibility shims or legacy code paths that increase maintenance surface.\n`
-      + `- **No Defensive Garbage** — Trust established preconditions and module contracts; let violated invariants surface as immediate failures instead of masking them with silent fallbacks.\n`
-      + `- **Tell, Don't Ask** — Rather than querying an object's state and acting on it, tell the object what to do and let it use its own state to decide how.\n`
-      + `- **Fail Fast** — Detect and report errors at the earliest possible point, at the interface where the fault originates, rather than allowing bad state to propagate.\n`
-      + `- **No Silent Error Swallowing** — Never catch an exception and discard it without logging, re-raising, or making the failure visible; every error must produce an observable signal.\n`
-      + `- **Explicit Error Types** — Represent each distinct failure mode as a named, typed value in the return signature rather than relying on generic exceptions or sentinel values.\n`
-      + `\n`;
-    template += `## Documented Solutions\n\n`
-      + `\`docs/solutions/\` contains documented solutions to past problems and practices (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (\`module\`, \`tags\`, \`problem_type\`). Relevant when implementing, debugging, or making decisions in documented areas.\n`
-      + `\n`;
-    template += `# Workflow\n`;
     writeFileSync('AGENTS.md', template);
     console.log('  Created AGENTS.md');
   }
@@ -1171,6 +1177,7 @@ async function main() {
     const tools = selectedByFlags.length
       ? selectedByFlags
       : TOOL_OPTIONS.map(tool => tool.value);
+    installOpencodeToolMap(tools);
     setupProject(tools);
     console.log('\nDone.');
     return;
@@ -1216,6 +1223,7 @@ async function main() {
 
   // Bundled agentstack skills
   installBundledSkills(tools);
+  installOpencodeToolMap(tools);
 
   ensureBypassPermissions(tools);
   setupProject(tools);

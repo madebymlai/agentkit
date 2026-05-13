@@ -1,5 +1,6 @@
 .claude/
 .agents/
+.codex
 .codex/
 .opencode/
 skills-lock.json
