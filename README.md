@@ -31,7 +31,6 @@ Prompts you to select which tools you use (Claude Code, Codex, OpenCode), then:
 | [**tokf**](https://github.com/mpecan/tokf) | Token compression binary + global hooks for selected tools (Linux/MacOS only) |
 | [**codebase-memory**](https://github.com/DeusData/codebase-memory-mcp) | Code knowledge graph MCP server for all selected tools |
 | [**compound-engineering**](https://github.com/EveryInc/compound-engineering-plugin) | AI dev workflow plugin (Claude) / native plugin + bunx-installed agents (Codex) / bunx install (OpenCode) |
-| [**bun**](https://bun.sh) | JS runtime, installed when needed |
 | **AGENTS.md** | Principles template + tokf section |
 | **.gitignore** | Ignores .claude/, .codex/, .opencode/, CLAUDE.md, AGENTS.md |
 
